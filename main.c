@@ -11,14 +11,22 @@
 
 uint32_t impulseWidth=0 ;
 uint8_t flag_start=0;
+
+uint8_t tim_flag=0;
+
+uint8_t up_flag_ext=0;
+uint8_t down_flag_ext=0;
 uint8_t up_flag=0;
 uint8_t down_flag=0;
-uint8_t tim_flag=0;
 uint8_t left_flag=0;
 uint8_t right_flag=0;
+uint8_t left_flag_ext=0;
+uint8_t right_flag_ext=0;
 int16_t holl_speed=0;
+
 int16_t speed = 5;
 uint8_t tft_flag=0;
+uint8_t flag_ok=0;
 
 #define BUFFER_SIZE 100
 
@@ -32,10 +40,13 @@ struct regulator Reg1;
 void Uart_Init(void);
 void dbgprintf( const char* format, ... );
 void cbgptfun3(GPTDriver *gptp);
+void cbgptfun4(GPTDriver *gptp);
 void holl(void* args);
 void Init_PID_Reg(void);
 
 GPTDriver *timer3 = &GPTD3;
+GPTDriver *timer4 = &GPTD4;
+
 SerialDriver *uart3 = &SD3;
 static BaseSequentialStream *uart3_stream = NULL;
 
@@ -54,8 +65,19 @@ GPTConfig gpt3_conf = {
     .cr2 = 0,
     .dier = 0
 };
-/*
-static THD_WORKING_AREA(tftThread, 256);// 256 - stack size
+
+GPTConfig gpt4_conf = {
+    .frequency = 50000,
+    .callback = cbgptfun4,
+    .cr2 = 0,
+    .dier = 0
+};
+
+static THD_WORKING_AREA(tftThread,512);// 512 - stack size
+
+//static THD_WORKING_AREA(tftspeedThread, 2048);// 512 - stack size
+
+static THD_WORKING_AREA(menuThread, 512);// 512 - stack size
 
 static THD_FUNCTION(tft, arg)
 {
@@ -66,27 +88,36 @@ static THD_FUNCTION(tft, arg)
     if (msg == MSG_OK)
     {
        sprintf(String,"%d",(int16_t)my_msg);
-       TFT_Fill_Screen(10,60,200,240,BLUE);
-       TFT_Draw_String(10,200,RED,BLUE,String,2);
+       TFT_Fill_Screen(160,200,200,220,WHITE);
+       TFT_Draw_String(160,200,RED,WHITE,String,2);
     }
 }
-static THD_FUNCTION(tft_speed, arg)
+/*static THD_FUNCTION(tft_speed, arg)
 {
     arg=arg;
     char String[15];
+    if(right_flag)
+      speed+=1;
+    if(left_flag)
+       speed-=1;
     sprintf(String,"%d",speed);
-    TFT_Fill_Screen(10,60,200,240,BLUE);
-    TFT_Draw_String(10,200,RED,BLUE,String,2);
+    TFT_Fill_Screen(0,320,0,240,WHITE);
+    //TFT_Fill_Screen(160,200,150,170,WHITE);
+    TFT_Draw_String(160,150,RED,WHITE,String,2);
+    flag_ok=0;
+}*/
+
+static THD_FUNCTION(menu, arg)
+{
+    arg=arg;
+    Menu_Disp();
+    Cursor();
 }
-*/
+
 int main(void)
 {
     uint8_t arg = 5;
 
-    //дребезг кнопок
-    uint8_t flag_key1_press = 1;
-    systime_t time_key1_press = 0;
-    systime_t time = 0;
     halInit();
     chSysInit();
     Uart_Init();
@@ -96,16 +127,18 @@ int main(void)
     palSetLineMode(LINE_LED3, PAL_MODE_OUTPUT_PUSHPULL);
     //настройка дисплея и инициализация меню
     TFT_Init();
-    TFT_Fill_Screen(0,320,0,240,BLUE);
 
     chMBObjectInit(&tft_mb, tft_mb_buffer, BUFFER_SIZE);
 
-    //Menu_Create();
+    Menu_Create();
     Menu_GPIO_Init();
     Motor_GPIO_Init();
 
     //запуск таймера 3
     gptStart(timer3, &gpt3_conf);
+
+    //запуск таймера 3
+    gptStart(timer4, &gpt4_conf);
     //запуск в непрерывном режиме с периодом 0.1 с
     gptStartContinuous(timer3, 5000);
     //Настройка ног датчика холла
@@ -119,49 +152,68 @@ int main(void)
     while (1)
     {
 
-      if(up_flag==1)
+      if(up_flag==1 )
       {
-        flag_key1_press = 0;
-        if(flag_start==0)
+        /*if(flag_start==0)
         {
           Motor_Forward();
-          pwmEnableChannel( &PWMD1, 1, PWM_PERCENTAGE_TO_WIDTH(&PWMD1,10000) );
+        }*/
+        if(current->prev!=NULL)
+        {
+          current=current->prev;
+          chThdCreateStatic(menuThread, sizeof(menuThread), NORMALPRIO+2, menu, NULL);
         }
-        time_key1_press = chVTGetSystemTime();
         up_flag=0;
       }
 
-      if(down_flag==1)
+      if(down_flag==1 )
       {
-        flag_key1_press = 0;
-         if(flag_start==1)
+         /*if(flag_start==1)
          {
            Motor_Stop();
-         }
-         time_key1_press = chVTGetSystemTime();
-         down_flag=0;
+         }*/
+        if(current->next!=NULL)
+        {
+          current=current->next;
+          chThdCreateStatic(menuThread, sizeof(menuThread), NORMALPRIO+2, menu, NULL);
+        }
+        down_flag=0;
       }
 
-      if(right_flag==1)
+      if(right_flag==1 )
       {
-        flag_key1_press = 0;
-        if(flag_start==1 && speed<20)
+        /*if(flag_start==1 && speed<20)
         {
-          speed+=1;
-          //chThdCreateStatic(tftThread, sizeof(tftThread), NORMALPRIO+1, tft_speed, NULL);
+          if(flag_ok==0)
+          {
+            flag_ok=1;
+            chThdCreateStatic(tftspeedThread, sizeof(tftThread), NORMALPRIO+2, tft_speed, NULL);
+          }
+        }*/
+        if(current->child!=NULL)
+        {
+          current=current->child;
+          chThdCreateStatic(menuThread, sizeof(menuThread), NORMALPRIO+2, menu, NULL);
+
         }
-        time_key1_press = chVTGetSystemTime();
         right_flag=0;
       }
 
       if(left_flag==1)
       {
-        flag_key1_press = 0;
-        if(flag_start==1 && speed>1)
+        /*if(flag_start==1 && speed>1)
         {
-          speed-=1;
+          if(flag_ok==0)
+          {
+            flag_ok=1;
+            chThdCreateStatic(tftspeedThread, sizeof(tftThread), NORMALPRIO+2, tft_speed, NULL);
+          }
+        }*/
+        if(current->parent!=NULL)
+        {
+          current=current->parent;
+          chThdCreateStatic(menuThread, sizeof(menuThread), NORMALPRIO+2, menu, NULL);
         }
-        time_key1_press = chVTGetSystemTime();
         left_flag=0;
       }
 
@@ -169,15 +221,15 @@ int main(void)
       {
         sdWrite(uart3, (uint8_t *)&holl_speed, 2);
         PID_Reg(Reg1,speed*2,holl_speed);
-        /*if(tft_flag)
-          chThdCreateStatic(tftThread, sizeof(tftThread), NORMALPRIO+1, tft, NULL);*/
+        if(tft_flag)
+          chThdCreateStatic(tftThread, sizeof(tftThread), NORMALPRIO+1, tft, NULL);
         holl_speed=0;
         tim_flag=0;
       }
-      if(!flag_key1_press && (time=chVTGetSystemTime() - time_key1_press) > 300)
-      {
-        flag_key1_press = 1;
-      }
+
+
+
+
 
      }
 
@@ -221,7 +273,7 @@ void dbgprintf( const char* format, ... )
     va_end(ap);
 }
 
-// callback функция таймера
+// callback функция таймера 3
 void cbgptfun3(GPTDriver *gptp)
 {
     (void)gptp;
@@ -232,6 +284,41 @@ void cbgptfun3(GPTDriver *gptp)
     else
       tft_flag=0;
     tim_flag=1;
+}
+
+// callback функция таймера 4
+void cbgptfun4(GPTDriver *gptp)
+{
+    (void)gptp;
+    uint8_t arg = 5;
+    if(right_flag_ext)
+    {
+      palEnablePadEventI(RIGHT_GPIO_Port, RIGHT_Pin, PAL_EVENT_MODE_RISING_EDGE);
+      palSetPadCallbackI(RIGHT_GPIO_Port, RIGHT_Pin, right_button, &arg);
+      gptStopTimerI(timer4);
+      right_flag_ext=0;
+    }
+    if(left_flag_ext)
+    {
+      palEnablePadEventI(LEFT_GPIO_Port, LEFT_Pin, PAL_EVENT_MODE_RISING_EDGE);
+      palSetPadCallbackI(LEFT_GPIO_Port, LEFT_Pin, left_button, &arg);
+      gptStopTimerI(timer4);
+      left_flag_ext=0;
+    }
+    if(up_flag_ext)
+    {
+      palEnablePadEventI(UP_GPIO_Port, UP_Pin, PAL_EVENT_MODE_RISING_EDGE);
+      palSetPadCallbackI(UP_GPIO_Port, UP_Pin, up_button, &arg);
+      gptStopTimerI(timer4);
+      up_flag_ext=0;
+    }
+    if(down_flag_ext)
+    {
+      palEnablePadEventI(DOWN_GPIO_Port, DOWN_Pin, PAL_EVENT_MODE_RISING_EDGE);
+      palSetPadCallbackI(DOWN_GPIO_Port, DOWN_Pin, down_button, &arg);
+      gptStopTimerI(timer4);
+      down_flag_ext=0;
+    }
 }
 
 // callback функция, которая должна сработать по настроенному событию
@@ -272,23 +359,13 @@ void up_button(void* args)
 {
     // Преобразование аргумента к требуемому типу, в данному случае к uint8_t
     uint8_t arg = *((uint8_t*) args);
-    // Проверка, что передача аргумента работает
-    if (arg == 5)
-    {
-      up_flag=1;
-      /*if(flag_start==0)
-      {
-        Motor_Forward();
-
-      }*/
-      /*palToggleLine(LINE_LED1);
-      if(current->prev!=NULL)
-      {
-        current=current->prev;
-        //Menu_Disp();
-        //Cursor();
-      }*/
-    }
+    while(arg);
+    // Запрет прерываний
+    palDisablePadEventI(UP_GPIO_Port, UP_Pin);
+    up_flag=1;
+    up_flag_ext=1;
+    //запуск в непрерывном режиме с периодом 0.5 с
+    gptStartContinuousI(timer4, 25000);
 }
 
 // callback функция, которая должна сработать по настроенному событию
@@ -296,19 +373,13 @@ void down_button(void* args)
 {
     // Преобразование аргумента к требуемому типу, в данному случае к uint8_t
     uint8_t arg = *((uint8_t*) args);
-    // Проверка, что передача аргумента работает
-    if (arg == 5)
-    {
-      down_flag=1;
-      /*palToggleLine(LINE_LED1);
-      if(current->next!=NULL)
-      {
-        current=current->next;
-        Menu_Disp();
-        Cursor();
-      }
-      */
-    }
+    while(arg);
+    // Запрет прерываний
+    palDisablePadEventI(DOWN_GPIO_Port, DOWN_Pin);
+    down_flag=1;
+    down_flag_ext=1;
+    //запуск в непрерывном режиме с периодом 0.5 с
+    gptStartContinuousI(timer4, 25000);
 }
 
 // callback функция, которая должна сработать по настроенному событию
@@ -316,35 +387,13 @@ void right_button(void* args)
 {
     // Преобразование аргумента к требуемому типу, в данному случае к uint8_t
     uint8_t arg = *((uint8_t*) args);
-    // Проверка, что передача аргумента работает
-    if (arg == 5)
-    {
-      right_flag=1;
-      /*if(current->child!=NULL)
-      {
-        current=current->child;
-        if(current->cmd!=NULL && current->child==NULL)
-        {
-          switch(current->cmd)
-          {
-            case 1:
-            {
-              Motor_Forward();
-              TFT_Fill_Screen(0,320,0,240,BLUE);
-              TFT_Draw_String(40,110,RED,BLUE,"Motor works",3);
-              TFT_Draw_String(40,60,RED,BLUE,"to exit, press LEFT",3);
-            }
-            break;
-            case 2:
-              //Motor_Speed();
-            break;
-            case 3:
-              Motor_Stop();
-            break;
-           }
-          }
-        }*/
-    }
+    while(arg);
+    // Запрет прерываний
+    palDisablePadEventI(RIGHT_GPIO_Port, RIGHT_Pin);
+    right_flag=1;
+    right_flag_ext=1;
+    //запуск в непрерывном режиме с периодом 0.5 с
+    gptStartContinuousI(timer4, 25000);
 }
 
 // callback функция, которая должна сработать по настроенному событию
@@ -352,17 +401,12 @@ void left_button(void* args)
 {
     // Преобразование аргумента к требуемому типу, в данному случае к uint8_t
     uint8_t arg = *((uint8_t*) args);
-    // Проверка, что передача аргумента работает
-    if (arg == 5)
-    {
-      left_flag=1;
-      /*if(current->parent!=NULL)
-           {
-             current=current->parent;
-             Menu_Disp();
-             Cursor();
-           }
-    }*/
-    }
+    while(arg);
+    // Запрет прерываний
+    palDisablePadEventI(LEFT_GPIO_Port, LEFT_Pin);
+    left_flag=1;
+    left_flag_ext=1;
+    //запуск в непрерывном режиме с периодом 0.5 с
+    gptStartContinuousI(timer4, 25000);
 }
 

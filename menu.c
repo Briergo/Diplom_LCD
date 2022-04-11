@@ -133,20 +133,20 @@ void Menu_Create(void)
 
 void Menu_Disp(void)
 {
-  TFT_Fill_Screen(0,320,0,240,BLUE);
+  TFT_Fill_Screen(0,320,0,240,WHITE);
   node_t* i;
   i=current;
   while(i->prev!=NULL)
         i=i->prev;
   while(i!=NULL)
   {
-      TFT_Draw_String(i->x_pos,i->y_pos, BLACK, BLUE, i->text, 3);
+      TFT_Draw_String(i->x_pos,i->y_pos, BLACK, WHITE, i->text, 2);
       i=i->next;
   }  
 }
 
 void Cursor(void)
 {
-    TFT_Draw_String(current->x_pos,current->y_pos, RED, BLUE, current->text, 3);
+    TFT_Draw_String(current->x_pos,current->y_pos, RED, WHITE, current->text, 2);
 }
 
